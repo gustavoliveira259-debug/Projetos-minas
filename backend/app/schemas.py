@@ -1,0 +1,99 @@
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class AtividadeBase(BaseModel):
+    codigo: str | None = Field(None, max_length=50)
+    descricao: str = Field(..., min_length=1, max_length=255)
+    tipo: str | None = Field(None, max_length=80)
+    frente: str | None = Field(None, max_length=80)
+    equipamento: str | None = Field(None, max_length=80)
+    responsavel: str | None = Field(None, max_length=80)
+    unidade: str = Field("t", max_length=20)
+    qtd_planejada: float = Field(0, ge=0)
+    inicio_planejado: date
+    fim_planejado: date
+    inicio_real: date | None = None
+    fim_real: date | None = None
+    progresso_manual: float | None = Field(None, ge=0, le=100)
+    observacoes: str | None = None
+
+
+def validar_datas(d: dict):
+    ini, fim = d.get("inicio_planejado"), d.get("fim_planejado")
+    if ini and fim and fim < ini:
+        raise ValueError("O fim planejado não pode ser anterior ao início planejado.")
+    ir, fr = d.get("inicio_real"), d.get("fim_real")
+    if ir and fr and fr < ir:
+        raise ValueError("O fim real não pode ser anterior ao início real.")
+
+
+class AtividadeCreate(AtividadeBase):
+    @model_validator(mode="after")
+    def _datas(self):
+        validar_datas(self.model_dump())
+        return self
+
+
+class AtividadeUpdate(BaseModel):
+    """Atualização parcial (PATCH): só os campos enviados são alterados."""
+
+    codigo: str | None = Field(None, max_length=50)
+    descricao: str | None = Field(None, min_length=1, max_length=255)
+    tipo: str | None = None
+    frente: str | None = None
+    equipamento: str | None = None
+    responsavel: str | None = None
+    unidade: str | None = Field(None, max_length=20)
+    qtd_planejada: float | None = Field(None, ge=0)
+    inicio_planejado: date | None = None
+    fim_planejado: date | None = None
+    inicio_real: date | None = None
+    fim_real: date | None = None
+    progresso_manual: float | None = Field(None, ge=0, le=100)
+    observacoes: str | None = None
+
+
+class SituacaoOut(BaseModel):
+    status: str
+    rotulo: str
+    progresso_real: float
+    progresso_esperado: float
+    desvio: float
+    qtd_realizada: float
+    qtd_esperada: float
+    saldo: float
+    projecao: float
+    impacto_meta: float
+    dias_atraso: int
+    data_conclusao: date | None
+    concluida_com_atraso: bool
+
+
+class AtividadeOut(AtividadeBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    qtd_realizada: float
+    criado_em: datetime | None = None
+    atualizado_em: datetime | None = None
+    situacao: SituacaoOut
+
+
+class ApontamentoCreate(BaseModel):
+    data: date
+    quantidade: float = Field(..., ge=0)
+    observacao: str | None = Field(None, max_length=255)
+    concluir: bool = False  # marca a atividade como concluída nesta data
+
+
+class ApontamentoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    atividade_id: int
+    data: date
+    quantidade: float
+    observacao: str | None
+    criado_em: datetime | None = None
