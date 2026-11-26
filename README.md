@@ -8,7 +8,7 @@ Sistema web para gerenciamento e acompanhamento do **planejamento semanal de lav
 - **Atualização de andamento** por apontamentos diários de produção, com histórico.
 - **Situação automática**: não iniciada, no prazo, adiantada, atrasada e concluída (inclusive "concluída após o prazo").
 - **Indicadores**: aderência ao plano, planejado × realizado × esperado por tipo/unidade, projeção no ritmo atual e **impacto previsto na meta**.
-- **Exportação para Excel** (Resumo, Atividades, Apontamentos, Indicadores).
+- **Exportação para Excel** (Resumo, Por frente, Atividades, Apontamentos, Indicadores). A aba *Por frente* traz, por frente e tipo, a data de referência, atividades totais, concluídas, atrasadas e a produção planejada × realizada.
 - **Integração com Power BI** via feeds JSON/CSV: veja [docs/powerbi.md](docs/powerbi.md).
 
 ## Como executar

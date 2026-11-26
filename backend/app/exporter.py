@@ -44,6 +44,52 @@ def _tabela(ws, cabecalho: list[str], linhas: list[list], formatos: dict[int, st
         ws.auto_filter.ref = ws.dimensions
 
 
+def _aba_por_frente(ws, atividades: list[Atividade], ref: date) -> None:
+    """Uma linha por frente + tipo (+ unidade): contagens e produção planejada × realizada.
+
+    Ao fim de cada frente há uma linha de total só com as contagens (unidades diferentes não se somam).
+    """
+    grupos: dict[tuple, dict] = {}
+    for a in atividades:
+        s = calcular_situacao(a, ref)
+        chave = (a.frente or "Sem frente", a.tipo or "Sem tipo", a.unidade or "")
+        g = grupos.setdefault(chave, {"total": 0, "concluidas": 0, "atrasadas": 0, "plan": 0.0, "real": 0.0})
+        g["total"] += 1
+        g["concluidas"] += s.status == "concluida"
+        g["atrasadas"] += s.status == "atrasada"
+        if a.qtd_planejada:
+            g["plan"] += a.qtd_planejada
+            g["real"] += s.qtd_realizada
+
+    cab = ["Frente", "Tipo", "Data", "Atividades totais", "Concluídas", "Atrasadas",
+           "Unidade", "Planejado", "Realizado", "Atingimento"]
+    linhas, linhas_total = [], []
+    frentes = sorted({k[0] for k in grupos})
+    for frente in frentes:
+        itens = sorted((k, g) for k, g in grupos.items() if k[0] == frente)
+        for (_, tipo, un), g in itens:
+            tem_qtd = g["plan"] > 0
+            linhas.append([frente, tipo, ref, g["total"], g["concluidas"], g["atrasadas"],
+                           un if tem_qtd else None,
+                           round(g["plan"], 2) if tem_qtd else None,
+                           round(g["real"], 2) if tem_qtd else None,
+                           round(g["real"] / g["plan"], 4) if tem_qtd else None])
+        if len(itens) > 1:
+            linhas.append([f"Total {frente}", None, ref, *(sum(g[k] for _, g in itens)
+                           for k in ("total", "concluidas", "atrasadas")), None, None, None, None])
+            linhas_total.append(len(linhas) + 1)
+    if len(frentes) > 1:
+        linhas.append(["Total geral", None, ref, *(sum(g[k] for g in grupos.values())
+                       for k in ("total", "concluidas", "atrasadas")), None, None, None, None])
+        linhas_total.append(len(linhas) + 1)
+
+    _tabela(ws, cab, linhas, {3: FMT_DATA, 8: FMT_NUM, 9: FMT_NUM, 10: FMT_PCT})
+    for r in linhas_total:
+        for c in ws[r]:
+            c.font = Font(bold=True)
+            c.fill = PatternFill("solid", fgColor="E8EDF3")
+
+
 def exportar_excel(atividades: list[Atividade], ref: date | None = None) -> bytes:
     ref = ref or date.today()
     wb = Workbook()
@@ -102,7 +148,11 @@ def exportar_excel(atividades: list[Atividade], ref: date | None = None) -> byte
     ws4["B2"].number_format = FMT_DATA
     ws4["B4"].number_format = FMT_PCT
     ws4["B10"].number_format = FMT_PCT
-    wb.move_sheet("Resumo", offset=-3)
+
+    # --- Por frente ---
+    _aba_por_frente(wb.create_sheet("Por frente"), atividades, ref)
+
+    wb._sheets = [wb[n] for n in ("Resumo", "Por frente", "Atividades", "Apontamentos", "Indicadores")]
     wb.active = 0
 
     buf = io.BytesIO()
