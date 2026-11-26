@@ -35,6 +35,19 @@ export const api = {
   apontar: (id, d) => req('POST', `/api/atividades/${id}/apontamentos`, d),
   excluirApontamento: (id) => req('DELETE', `/api/apontamentos/${id}`),
   indicadores: (p = {}) => req('GET', `/api/indicadores${qs(p)}`),
+  equipamentos: () => req('GET', '/api/equipamentos'),
+  painelFrota: (p = {}) => req('GET', `/api/equipamentos/painel${qs(p)}`),
+  criarEquipamento: (d) => req('POST', '/api/equipamentos', d),
+  atualizarEquipamento: (id, d) => req('PATCH', `/api/equipamentos/${id}`, d),
+  excluirEquipamento: (id) => req('DELETE', `/api/equipamentos/${id}`),
+  sincronizarEquipamentos: () => req('POST', '/api/equipamentos/sincronizar'),
+  paradas: (id) => req('GET', `/api/equipamentos/${id}/paradas`),
+  criarParada: (id, d) => req('POST', `/api/equipamentos/${id}/paradas`, d),
+  atualizarParada: (id, d) => req('PATCH', `/api/paradas/${id}`, d),
+  excluirParada: (id) => req('DELETE', `/api/paradas/${id}`),
+  horas: (id) => req('GET', `/api/equipamentos/${id}/horas`),
+  registrarHoras: (id, d) => req('POST', `/api/equipamentos/${id}/horas`, d),
+  excluirHoras: (id) => req('DELETE', `/api/horas/${id}`),
   importar: (arquivo, confirmar, modo) => {
     const fd = new FormData();
     fd.append('arquivo', arquivo);

@@ -4,6 +4,7 @@ import { renderPainel } from './painel.js';
 import { renderGantt } from './gantt.js';
 import { renderAtividades } from './atividades.js';
 import { renderImportar } from './importar.js';
+import { renderEquipamentos } from './equipamentos.js';
 
 const salvo = JSON.parse(localStorage.getItem('mineplan.periodo') || '{}');
 
@@ -28,6 +29,7 @@ const rotas = {
   painel: renderPainel,
   gantt: renderGantt,
   atividades: renderAtividades,
+  equipamentos: renderEquipamentos,
   importar: renderImportar,
 };
 

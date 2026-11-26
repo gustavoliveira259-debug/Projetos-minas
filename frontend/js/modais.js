@@ -3,7 +3,7 @@ import { badge, esc, fmtDataLonga, fmtNum, fmtPct, hojeISO, toast } from './util
 
 const modal = () => document.getElementById('modal');
 
-function abrir(html) {
+export function abrir(html) {
   const m = modal();
   m.innerHTML = html;
   m.showModal();

@@ -90,7 +90,52 @@ def _aba_por_frente(ws, atividades: list[Atividade], ref: date) -> None:
             c.fill = PatternFill("solid", fgColor="E8EDF3")
 
 
-def exportar_excel(atividades: list[Atividade], ref: date | None = None) -> bytes:
+FMT_DATA_HORA = "DD/MM/YYYY HH:MM"
+EQ_FILL = {"manutencao": "F8D7D7", "parado": "FCEFD0", "operando": "DCE9F9", "disponivel": "D6F0D6", "inativo": "EEEEEE"}
+
+
+def _abas_frota(wb, frota: dict) -> list[str]:
+    """Abas Equipamentos, Paradas e Conflitos (resultado de frota.analisar_frota)."""
+    ws = wb.create_sheet("Equipamentos")
+    cab = ["Código", "Descrição", "Categoria", "Frente", "Situação", "DF", "Meta DF", "DF prevista", "UF",
+           "Horas calendário", "Horas corretiva", "Horas preventiva", "Horas operacional", "Manut. programada (h)",
+           "Horas trabalhadas", "Nº corretivas", "MTTR (h)", "Horímetro", "Preventiva", "Faltam (h)",
+           "Atividades no período"]
+    rotulo_prev = {"vencida": "Vencida", "proxima": "Próxima", "ok": "Em dia", "sem_dados": "—"}
+    linhas, sts = [], []
+    for e in frota["equipamentos"]:
+        pv = e["preventiva"]
+        linhas.append([e["codigo"], e["descricao"], e["categoria"], e["frente"], e["status_rotulo"], e["df"],
+                       e["meta_df"], e["df_prevista"], e["uf"], e["horas_calendario"], e["horas_corretiva"],
+                       e["horas_preventiva"], e["horas_operacional"], e["horas_manutencao_programada"],
+                       e["horas_trabalhadas"], e["corretivas"], e["mttr_h"], pv["horimetro_atual"],
+                       rotulo_prev[pv["estado"]], pv["restante_h"], len(e["atividades"])])
+        sts.append(e["status"])
+    _tabela(ws, cab, linhas, {6: FMT_PCT, 7: FMT_PCT, 8: FMT_PCT, 9: FMT_PCT})
+    for r, st in enumerate(sts, start=2):
+        ws.cell(r, 5).fill = PatternFill("solid", fgColor=EQ_FILL[st])
+
+    ws2 = wb.create_sheet("Paradas")
+    paradas = [[e["codigo"], e["categoria"], p["tipo"].capitalize(), p["inicio"], p["fim"],
+                round(((p["fim"] - p["inicio"]).total_seconds() / 3600), 1) if p["fim"] else None,
+                "Em aberto" if p["fim"] is None else None, p["motivo"], p["horimetro"]]
+               for e in frota["equipamentos"] for p in e["paradas"]]
+    _tabela(ws2, ["Equipamento", "Categoria", "Tipo", "Início", "Fim", "Duração (h)", "Situação", "Motivo",
+                  "Horímetro"], paradas, {4: FMT_DATA_HORA, 5: FMT_DATA_HORA, 6: FMT_NUM})
+
+    ws3 = wb.create_sheet("Conflitos")
+    _tabela(ws3, ["Atividade", "Descrição", "Frente", "Início planejado", "Fim planejado", "Equipamento",
+                  "Tipo de parada", "Início parada", "Fim parada", "Horas sobrepostas", "Perda de capacidade",
+                  "Produção em risco", "Unidade", "Programada"],
+            [[c["codigo_atividade"], c["descricao"], c["frente"], c["inicio_planejado"], c["fim_planejado"],
+              c["equipamento"], c["tipo_parada"].capitalize(), c["parada_inicio"], c["parada_fim"],
+              c["horas_sobrepostas"], c["perda_capacidade"], c["producao_em_risco"], c["unidade"],
+              "Sim" if c["programada"] else "Não"] for c in frota["conflitos"]],
+            {4: FMT_DATA, 5: FMT_DATA, 8: FMT_DATA_HORA, 9: FMT_DATA_HORA, 10: FMT_NUM, 11: FMT_PCT, 12: FMT_NUM})
+    return ["Equipamentos", "Paradas", "Conflitos"]
+
+
+def exportar_excel(atividades: list[Atividade], ref: date | None = None, frota: dict | None = None) -> bytes:
     ref = ref or date.today()
     wb = Workbook()
 
@@ -152,7 +197,9 @@ def exportar_excel(atividades: list[Atividade], ref: date | None = None) -> byte
     # --- Por frente ---
     _aba_por_frente(wb.create_sheet("Por frente"), atividades, ref)
 
-    wb._sheets = [wb[n] for n in ("Resumo", "Por frente", "Atividades", "Apontamentos", "Indicadores")]
+    abas_frota = _abas_frota(wb, frota) if frota and frota["equipamentos"] else []
+
+    wb._sheets = [wb[n] for n in ("Resumo", "Por frente", "Atividades", "Apontamentos", "Indicadores", *abas_frota)]
     wb.active = 0
 
     buf = io.BytesIO()
