@@ -11,7 +11,9 @@ from ..database import get_db
 from ..exporter import exportar_excel, modelo_importacao
 from ..importer import ler_planilha
 from ..models import Apontamento, Atividade
+from ..frota import analisar_frota
 from ..services import listar_atividades
+from .equipamentos import listar_equipamentos, periodo_frota
 
 router = APIRouter(prefix="/api", tags=["importação e exportação"])
 
@@ -121,5 +123,7 @@ def exportar(
     db: Session = Depends(get_db),
 ):
     ats = listar_atividades(db, inicio, fim, frente, tipo)
+    f_ini, f_fim, ref = periodo_frota(inicio, fim, data_ref)
+    frota = analisar_frota(listar_equipamentos(db), listar_atividades(db, f_ini, f_fim), f_ini, f_fim, ref)
     sufixo = f"{inicio:%Y%m%d}_{fim:%Y%m%d}" if inicio and fim else f"{date.today():%Y%m%d}"
-    return _xlsx(exportar_excel(ats, data_ref), f"mineplan_{sufixo}.xlsx")
+    return _xlsx(exportar_excel(ats, data_ref, frota), f"mineplan_{sufixo}.xlsx")

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .database import init_db
-from .routers import arquivos, atividades, powerbi
+from .routers import arquivos, atividades, equipamentos, powerbi
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 
@@ -24,8 +24,18 @@ app = FastAPI(
 )
 
 app.include_router(atividades.router)
+app.include_router(equipamentos.router)
 app.include_router(arquivos.router)
 app.include_router(powerbi.router)
+
+
+@app.middleware("http")
+async def sem_cache_no_frontend(request, call_next):
+    """Faz o navegador revalidar HTML/JS/CSS a cada carga, para não exibir uma versão antiga da interface."""
+    resp = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/api/saude", tags=["sistema"])

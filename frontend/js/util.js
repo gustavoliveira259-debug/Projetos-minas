@@ -88,3 +88,13 @@ export function mostrarTooltip(html, x, y) {
   el.style.top = `${Math.max(8, top)}px`;
 }
 export const esconderTooltip = () => { tip().hidden = true; };
+
+/** "2026-11-24T12:00:00" -> Date local */
+export const parseDataHora = (s) => (s ? new Date(s.length === 10 ? `${s}T00:00` : s) : null);
+export const fmtDataHora = (s) => {
+  const d = typeof s === 'string' ? parseDataHora(s) : s;
+  return d ? `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '—';
+};
+/** Date -> valor de <input type="datetime-local"> */
+export const paraDataHoraLocal = (d) => `${toISO(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+export const fmtHoras = (h) => (h == null ? '—' : `${fmtNum(h)} h`);

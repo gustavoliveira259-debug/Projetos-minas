@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -20,6 +21,15 @@ class AtividadeBase(BaseModel):
     observacoes: str | None = None
 
 
+class AtividadeCreate(AtividadeBase):
+    predecessoras: list[int] = Field(default_factory=list, description="IDs das atividades das quais esta depende")
+
+    @model_validator(mode="after")
+    def _datas(self):
+        validar_datas(self.model_dump())
+        return self
+
+
 def validar_datas(d: dict):
     ini, fim = d.get("inicio_planejado"), d.get("fim_planejado")
     if ini and fim and fim < ini:
@@ -27,13 +37,6 @@ def validar_datas(d: dict):
     ir, fr = d.get("inicio_real"), d.get("fim_real")
     if ir and fr and fr < ir:
         raise ValueError("O fim real não pode ser anterior ao início real.")
-
-
-class AtividadeCreate(AtividadeBase):
-    @model_validator(mode="after")
-    def _datas(self):
-        validar_datas(self.model_dump())
-        return self
 
 
 class AtividadeUpdate(BaseModel):
@@ -53,6 +56,7 @@ class AtividadeUpdate(BaseModel):
     fim_real: date | None = None
     progresso_manual: float | None = Field(None, ge=0, le=100)
     observacoes: str | None = None
+    predecessoras: list[int] | None = None
 
 
 class SituacaoOut(BaseModel):
@@ -71,6 +75,16 @@ class SituacaoOut(BaseModel):
     concluida_com_atraso: bool
 
 
+class AtividadeRef(BaseModel):
+    """Referência curta a outra atividade (dependências)."""
+
+    id: int
+    codigo: str | None
+    descricao: str
+    inicio_planejado: date
+    fim_planejado: date
+
+
 class AtividadeOut(AtividadeBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,6 +93,10 @@ class AtividadeOut(AtividadeBase):
     criado_em: datetime | None = None
     atualizado_em: datetime | None = None
     situacao: SituacaoOut
+    predecessoras: list[AtividadeRef] = []
+    sucessoras: list[AtividadeRef] = []
+    # Preenchido só na resposta de uma alteração: dependentes empurradas por ela.
+    empurradas: list[AtividadeRef] = []
 
 
 class ApontamentoCreate(BaseModel):
@@ -97,3 +115,95 @@ class ApontamentoOut(BaseModel):
     quantidade: float
     observacao: str | None
     criado_em: datetime | None = None
+
+
+# ---------- Equipamentos ----------
+
+TipoParada = Literal["corretiva", "preventiva", "operacional"]
+
+
+class EquipamentoBase(BaseModel):
+    codigo: str = Field(..., min_length=1, max_length=50)
+    descricao: str | None = Field(None, max_length=120)
+    categoria: str | None = Field(None, max_length=80)
+    frente: str | None = Field(None, max_length=80)
+    meta_df: float = Field(0.85, ge=0, le=1)
+    intervalo_preventiva_h: float | None = Field(None, gt=0)
+    horimetro_ultima_preventiva: float | None = Field(None, ge=0)
+    ativo: bool = True
+    observacoes: str | None = None
+
+
+class EquipamentoCreate(EquipamentoBase):
+    pass
+
+
+class EquipamentoUpdate(BaseModel):
+    codigo: str | None = Field(None, min_length=1, max_length=50)
+    descricao: str | None = Field(None, max_length=120)
+    categoria: str | None = Field(None, max_length=80)
+    frente: str | None = Field(None, max_length=80)
+    meta_df: float | None = Field(None, ge=0, le=1)
+    intervalo_preventiva_h: float | None = Field(None, gt=0)
+    horimetro_ultima_preventiva: float | None = Field(None, ge=0)
+    ativo: bool | None = None
+    observacoes: str | None = None
+
+
+class EquipamentoOut(EquipamentoBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    horimetro_atual: float | None = None
+
+
+class ParadaCreate(BaseModel):
+    tipo: TipoParada
+    inicio: datetime
+    fim: datetime | None = None
+    motivo: str | None = Field(None, max_length=255)
+    horimetro: float | None = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def _datas(self):
+        if self.fim and self.fim <= self.inicio:
+            raise ValueError("O fim da parada deve ser posterior ao início.")
+        return self
+
+
+class ParadaUpdate(BaseModel):
+    tipo: TipoParada | None = None
+    inicio: datetime | None = None
+    fim: datetime | None = None
+    motivo: str | None = Field(None, max_length=255)
+    horimetro: float | None = Field(None, ge=0)
+
+
+class ParadaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    equipamento_id: int
+    tipo: str
+    inicio: datetime
+    fim: datetime | None
+    motivo: str | None
+    horimetro: float | None
+
+
+class RegistroHorasCreate(BaseModel):
+    data: date
+    horas_trabalhadas: float = Field(..., ge=0, le=24)
+    horimetro: float | None = Field(None, ge=0)
+    observacao: str | None = Field(None, max_length=255)
+
+
+class RegistroHorasOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    equipamento_id: int
+    data: date
+    horas_trabalhadas: float
+    horimetro: float | None
+    observacao: str | None

@@ -8,7 +8,8 @@ Sistema web para gerenciamento e acompanhamento do **planejamento semanal de lav
 - **Atualização de andamento** por apontamentos diários de produção, com histórico.
 - **Situação automática**: não iniciada, no prazo, adiantada, atrasada e concluída (inclusive "concluída após o prazo").
 - **Indicadores**: aderência ao plano, planejado × realizado × esperado por tipo/unidade, projeção no ritmo atual e **impacto previsto na meta**.
-- **Exportação para Excel** (Resumo, Atividades, Apontamentos, Indicadores).
+- **Equipamentos**: cadastro da frota, paradas (corretiva, preventiva, operacional), horas trabalhadas e horímetro. Mostra disponibilidade física (DF), utilização (UF), MTTR, preventivas vencidas/próximas, a linha do tempo de uso da semana e os **possíveis atrasos** — atividades cujo equipamento está (ou estará) parado dentro da janela planejada, com a produção em risco.
+- **Exportação para Excel** (Resumo, Por frente, Atividades, Apontamentos, Indicadores e, havendo frota cadastrada, Equipamentos, Paradas e Conflitos). A aba *Por frente* traz, por frente e tipo, a data de referência, atividades totais, concluídas, atrasadas e a produção planejada × realizada.
 - **Integração com Power BI** via feeds JSON/CSV: veja [docs/powerbi.md](docs/powerbi.md).
 
 ## Como executar
@@ -28,7 +29,8 @@ Manualmente:
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
 cd backend
-..\.venv\Scripts\python -m app.seed --limpar     # opcional: dados de exemplo da semana atual
+..\.venv\Scripts\python -m app.seed --limpar     # opcional: dados de exemplo da semana atual (atividades + frota)
+..\.venv\Scripts\python -m app.seed --equipamentos  # opcional: só a frota de exemplo, sem mexer nas atividades
 ..\.venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```
 
@@ -47,6 +49,22 @@ Testes: `cd backend; ..\.venv\Scripts\python -m pytest`
 | Aderência ao plano | Média, por atividade, de min(real ÷ esperado, 100%). Não mistura toneladas com metros, e uma atividade adiantada não mascara outra atrasada. |
 | Projeção / impacto na meta | Realizado ÷ dias decorridos × duração. Impacto = projeção − planejado (negativo = déficit previsto). |
 
+### Equipamentos
+
+| Conceito | Regra |
+|---|---|
+| Horas calendário | 24 h por dia, do início do período até o fim do dia de referência (ou até agora, se a referência for hoje). |
+| Disponibilidade física (DF) | (horas calendário − horas em manutenção) ÷ horas calendário. Só corretivas e preventivas contam como manutenção. |
+| DF prevista | A mesma conta para o período inteiro, incluindo as manutenções já programadas. |
+| Utilização (UF) | Horas trabalhadas ÷ horas disponíveis. Só aparece quando há horas apontadas no período. |
+| MTTR | Horas de corretiva ÷ número de corretivas iniciadas no período. |
+| Parada em aberto | Sem fim informado: conta até agora / fim do dia de referência. Não podem existir duas em aberto no mesmo equipamento. |
+| Preventiva | Próxima quando faltam até 10% do intervalo (mínimo 25 h) pelo horímetro; vencida quando passa do intervalo. Registrar a preventiva com o horímetro reinicia o contador. |
+| Vínculo com atividades | Pelo código no campo *Equipamento* da atividade. "CM-07/08/09" vale para CM-07, CM-08 e CM-09. |
+| Perda de capacidade | Horas paradas dentro da janela da atividade ÷ (horas da janela × nº de equipamentos da atividade). Produção em risco = planejado × perda. |
+
+Equipamentos citados nas atividades podem ser cadastrados de uma vez em **Equipamentos → Importar das atividades** (a categoria é sugerida pelo prefixo: PF, ES, CM, PC, MN, TE…).
+
 A tolerância de 10 p.p. pode ser alterada pela variável de ambiente `MINEPLAN_TOLERANCIA` (ex.: `0.05`).
 
 Ao filtrar por semana, entram as atividades planejadas nela **e** as pendências de semanas anteriores que ainda estão abertas (ou que foram concluídas dentro da semana).
@@ -64,11 +82,12 @@ Uma coluna *Qtd Realizada* vira um apontamento de produção; ao reimportar, só
 ```
 backend/app/
   main.py          app FastAPI + frontend estático
-  models.py        Atividade e Apontamento (SQLAlchemy)
+  models.py        Atividade, Apontamento, Equipamento, Parada e RegistroHoras (SQLAlchemy)
   status.py        regras de situação, aderência e indicadores
+  frota.py         disponibilidade, utilização, preventivas e conflitos com o plano
   importer.py      leitura de planilhas
   exporter.py      geração de Excel
-  routers/         atividades, importação/exportação, Power BI
+  routers/         atividades, equipamentos, importação/exportação, Power BI
   seed.py          dados de exemplo
 backend/tests/     testes automatizados (pytest)
 frontend/          HTML + CSS + JavaScript (sem etapa de build)

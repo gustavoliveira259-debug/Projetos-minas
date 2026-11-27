@@ -120,7 +120,7 @@ def test_exportacao_e_modelo(client):
     client.post("/api/atividades", json=NOVA)
     r = client.get("/api/exportacao/excel")
     wb = load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames == ["Resumo", "Atividades", "Apontamentos", "Indicadores"]
+    assert wb.sheetnames == ["Resumo", "Por frente", "Atividades", "Apontamentos", "Indicadores"]  # sem frota
     assert wb["Atividades"]["C2"].value == "Carregamento minério"
 
     r = client.get("/api/importacao/modelo")
