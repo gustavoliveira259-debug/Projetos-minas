@@ -145,7 +145,8 @@ def exportar_excel(atividades: list[Atividade], ref: date | None = None, frota: 
     cab = ["ID", "Código", "Atividade", "Tipo", "Frente", "Equipamento", "Responsável", "Unidade",
            "Qtd planejada", "Qtd realizada", "Saldo", "Qtd esperada até ref.", "Projeção no ritmo atual",
            "Impacto na meta", "Início planejado", "Fim planejado", "Início real", "Fim real", "Semana",
-           "Progresso real", "Progresso esperado", "Desvio (p.p.)", "Situação", "Dias de atraso", "Observações"]
+           "Progresso real", "Progresso esperado", "Desvio (p.p.)", "Situação", "Dias de atraso", "Observações",
+           "Depende de"]
     linhas, status_linha = [], []
     for a in atividades:
         s = calcular_situacao(a, ref)
@@ -153,7 +154,8 @@ def exportar_excel(atividades: list[Atividade], ref: date | None = None, frota: 
                        a.qtd_planejada, s.qtd_realizada, s.saldo, s.qtd_esperada, s.projecao, s.impacto_meta,
                        a.inicio_planejado, a.fim_planejado, a.inicio_real, a.fim_real,
                        semana_iso(a.inicio_planejado), s.progresso_real, s.progresso_esperado, s.desvio,
-                       s.rotulo, s.dias_atraso, a.observacoes])
+                       s.rotulo, s.dias_atraso, a.observacoes,
+                       ", ".join(p.codigo or p.descricao for p in a.predecessoras) or None])
         status_linha.append(s.status)
     fmts = {i: FMT_NUM for i in range(9, 15)} | {i: FMT_DATA for i in range(15, 19)} | {20: FMT_PCT, 21: FMT_PCT, 22: FMT_PCT}
     _tabela(ws, cab, linhas, fmts)

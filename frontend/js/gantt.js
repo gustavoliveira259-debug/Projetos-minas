@@ -1,6 +1,6 @@
 import { api } from './api.js';
 import { estado, periodo, atualizar } from './app.js';
-import { formAtividade, modalApontamento } from './modais.js';
+import { avisarEmpurradas, formAtividade, modalApontamento } from './modais.js';
 import {
   STATUS, addDias, badge, difDias, esc, esconderTooltip, fmtData, fmtDataLonga, fmtNum, fmtPct, fmtPP,
   mostrarTooltip, parseISO, semanaParaIntervalo, toISO, toast,
@@ -33,6 +33,7 @@ export async function renderGantt(main) {
         ${Object.entries(STATUS).map(([k, s]) => `<li><span class="amostra st-${k}"></span>${s.rotulo}</li>`).join('')}
         <li><span class="amostra esperado"></span>Progresso esperado</li>
         <li><span class="amostra real"></span>Execução real</li>
+        <li><span class="amostra dep"></span>Dependência</li>
       </ul>
     </div>
     <div class="gantt" id="gantt"></div>`;
@@ -127,6 +128,7 @@ function desenhar(el, ats) {
   const linhaRef = el.querySelector('.g-hoje');
   if (linhaRef) linhaRef.style.height = `${el.querySelector('.g-rolagem').scrollHeight}px`;
 
+  desenharDependencias(el, ats);
   const porId = new Map(ats.map((a) => [String(a.id), a]));
   ligarEventos(el, porId, ini, dw);
 }
@@ -156,7 +158,7 @@ function linha(a, ini, dw, larg, ref, fundo) {
     <div class="g-rotulo">
       <button class="g-nome" data-editar="${a.id}" title="Editar atividade">
         <span class="cod">${esc(a.codigo || '')}</span> ${esc(a.descricao)}
-        <small class="mudo">${esc([a.tipo, a.equipamento].filter(Boolean).join(' · '))}</small>
+        <small class="mudo">${esc([a.tipo, a.equipamento].filter(Boolean).join(' · '))}${a.responsavel ? `${a.tipo || a.equipamento ? ' · ' : ''}<span class="pessoa">${esc(a.responsavel)}</span>` : ''}</small>
       </button>
       <span class="g-prog txt-${s.status}" title="${STATUS[s.status].rotulo}">${STATUS[s.status].icone} ${fmtPct(s.progresso_real)}</span>
     </div>
@@ -165,7 +167,7 @@ function linha(a, ini, dw, larg, ref, fundo) {
            aria-label="${esc(a.descricao)}: ${STATUS[s.status].rotulo}, ${fmtPct(s.progresso_real)}">
         <span class="g-preench" style="width:${prog * 100}%"></span>
         ${marcaEsperado}
-        <span class="g-txt">${rotulo}</span>
+        <span class="g-txt">${[rotulo, w > 150 && a.responsavel ? esc(a.responsavel) : ''].filter(Boolean).join(' · ')}</span>
         <span class="g-alca e" data-alca="e"></span><span class="g-alca d" data-alca="d"></span>
       </div>
       ${real}
@@ -187,7 +189,46 @@ function dica(a) {
       ${s.dias_atraso ? `<tr><th>Atraso</th><td class="txt-atrasada">${s.dias_atraso} dia${s.dias_atraso > 1 ? 's' : ''}</td></tr>` : ''}
       ${a.frente ? `<tr><th>Frente</th><td>${esc(a.frente)}</td></tr>` : ''}
       ${a.equipamento ? `<tr><th>Equipamento</th><td>${esc(a.equipamento)}</td></tr>` : ''}
+      ${a.responsavel ? `<tr><th>Responsável</th><td>${esc(a.responsavel)}</td></tr>` : ''}
+      ${a.predecessoras.length ? `<tr><th>Depende de</th><td>${a.predecessoras.map(refCurta).join(', ')}</td></tr>` : ''}
+      ${a.sucessoras.length ? `<tr><th>Dependentes</th><td>${a.sucessoras.map(refCurta).join(', ')}</td></tr>` : ''}
     </table>`;
+}
+
+const refCurta = (r) => `${esc(r.codigo || r.descricao)} <span class="mudo">(${fmtData(r.inicio_planejado)}–${fmtData(r.fim_planejado)})</span>`;
+
+/** Setas fim → início entre predecessora e dependente (só as duas visíveis no cronograma). */
+function desenharDependencias(el, ats) {
+  const rolagem = el.querySelector('.g-rolagem');
+  const base = rolagem.getBoundingClientRect();
+  const caixa = (id) => {
+    const b = rolagem.querySelector(`.g-barra[data-id="${id}"]`);
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    const x = r.left - base.left + rolagem.scrollLeft;
+    const y = r.top - base.top + rolagem.scrollTop;
+    return { x1: x, x2: x + r.width, y: y + r.height / 2, alto: r.height };
+  };
+  let caminhos = '';
+  for (const a of ats) {
+    const d = caixa(a.id);
+    if (!d) continue;
+    for (const p of a.predecessoras) {
+      const o = caixa(p.id);
+      if (!o) continue;
+      const xs = o.x2;
+      const xe = d.x1;
+      // Sai pela direita da principal, desce e entra pela esquerda da dependente.
+      const desvio = xe - xs >= 14
+        ? `H${xs + 7} V${d.y} H${xe}`
+        : `h7 V${d.y - Math.sign(d.y - o.y || 1) * (d.alto / 2 + 6)} H${xe - 8} V${d.y} H${xe}`;
+      caminhos += `<path d="M${xs} ${o.y} ${desvio}" marker-end="url(#seta-dep)"/>`;
+    }
+  }
+  if (!caminhos) return;
+  rolagem.insertAdjacentHTML('beforeend', `<svg class="g-deps" width="${rolagem.scrollWidth}" height="${rolagem.scrollHeight}" aria-hidden="true">
+    <defs><marker id="seta-dep" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z"/></marker></defs>${caminhos}</svg>`);
 }
 
 function ligarEventos(el, porId, ini, dw) {
@@ -270,8 +311,9 @@ async function salvarDatas(a, dIni, dFim) {
   const fim = addDias(parseISO(a.fim_planejado), dFim);
   if (fim < ini) return;
   try {
-    await api.atualizar(a.id, { inicio_planejado: toISO(ini), fim_planejado: toISO(fim) });
+    const resp = await api.atualizar(a.id, { inicio_planejado: toISO(ini), fim_planejado: toISO(fim) });
     toast(`${a.codigo || a.descricao}: ${fmtDataLonga(ini)} → ${fmtDataLonga(fim)}`);
+    avisarEmpurradas(resp);
   } catch (e) {
     toast(e.message, 'erro');
   }

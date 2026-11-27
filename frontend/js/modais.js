@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { badge, esc, fmtDataLonga, fmtNum, fmtPct, hojeISO, toast } from './util.js';
+import { addDias, badge, difDias, esc, fmtData, fmtDataLonga, fmtNum, fmtPct, hojeISO, parseISO, toISO, toast } from './util.js';
 
 const modal = () => document.getElementById('modal');
 
@@ -22,10 +22,38 @@ export const limparSugestoes = () => { filtrosCache = null; };
 const lista = (id, valores = []) =>
   `<datalist id="${id}">${valores.map((v) => `<option value="${esc(v)}">`).join('')}</datalist>`;
 
+const rotuloAtiv = (x) => `${x.codigo ? `${x.codigo} — ` : ''}${x.descricao}`;
+
+/** Avisa quais dependentes foram adiadas pela alteração (resposta do PATCH). */
+export function avisarEmpurradas(resp) {
+  const e = resp?.empurradas || [];
+  if (!e.length) return;
+  const lista = e.slice(0, 3).map((x) => `${x.codigo || x.descricao} → ${fmtData(x.inicio_planejado)}`).join(', ');
+  toast(`${e.length} dependente${e.length > 1 ? 's empurradas' : ' empurrada'}: ${lista}${e.length > 3 ? '…' : ''}`, 'info');
+}
+
+/** Ids das atividades que dependem (direta ou indiretamente) de `id`: não podem virar predecessoras dela. */
+function descendentes(id, todas) {
+  const porId = new Map(todas.map((x) => [x.id, x]));
+  const saida = new Set();
+  const pilha = [id];
+  while (pilha.length) {
+    for (const s of porId.get(pilha.pop())?.sucessoras || []) {
+      if (!saida.has(s.id)) { saida.add(s.id); pilha.push(s.id); }
+    }
+  }
+  return saida;
+}
+
 /** Formulário de cadastro / edição. `atividade` nulo = nova. `padrao` preenche datas iniciais. */
 export async function formAtividade(atividade, aoSalvar, padrao = {}) {
   const a = atividade || { unidade: 't', qtd_planejada: 0, ...padrao };
-  const f = await sugestoes();
+  const [f, todas] = await Promise.all([sugestoes(), api.atividades().catch(() => [])]);
+  const selecionadas = new Set((a.predecessoras || []).map((p) => p.id));
+  const bloqueadas = atividade ? descendentes(atividade.id, todas) : new Set();
+  const candidatas = todas
+    .filter((x) => x.id !== a.id && !bloqueadas.has(x.id))
+    .sort((x, y) => (selecionadas.has(y.id) - selecionadas.has(x.id)) || x.inicio_planejado.localeCompare(y.inicio_planejado));
   const v = (k) => esc(a[k] ?? '');
   const m = abrir(`
     <form method="dialog" class="form" id="f-ativ">
@@ -47,6 +75,15 @@ export async function formAtividade(atividade, aoSalvar, padrao = {}) {
         <label title="Use quando a atividade não tem quantidade (ex.: infraestrutura)">Progresso manual (%)
           <input name="progresso_manual" type="number" min="0" max="100" step="1" value="${v('progresso_manual')}"></label>
         <label class="c3">Observações<textarea name="observacoes" rows="2">${v('observacoes')}</textarea></label>
+        <fieldset class="c3 deps">
+          <legend>Depende de <span class="mudo">— só pode começar quando estas terminarem; se forem adiadas, esta é empurrada junto</span></legend>
+          ${candidatas.length ? `<input type="search" class="deps-busca" placeholder="Filtrar por código, descrição ou frente…" aria-label="Filtrar atividades">
+          <ul class="deps-lista">${candidatas.map((x) => `<li data-busca="${esc(`${x.codigo || ''} ${x.descricao} ${x.frente || ''}`.toLowerCase())}">
+            <label class="chk"><input type="checkbox" name="pred" value="${x.id}" data-fim="${x.fim_planejado}" ${selecionadas.has(x.id) ? 'checked' : ''}>
+              <span>${esc(rotuloAtiv(x))}</span><small class="mudo">${esc(x.frente || '')} · ${fmtData(x.inicio_planejado)}–${fmtData(x.fim_planejado)}</small></label></li>`).join('')}
+          </ul>
+          <p class="mudo deps-resumo" aria-live="polite"></p>` : '<p class="mudo">Nenhuma outra atividade cadastrada.</p>'}
+        </fieldset>
       </div>
       ${lista('dl-tipos', f.tipos)}${lista('dl-frentes', f.frentes)}${lista('dl-equip', f.equipamentos)}
       ${lista('dl-resp', f.responsaveis)}${lista('dl-un', [...new Set(['t', 'm³', 'm', 'un', ...(f.unidades || [])])])}
@@ -67,20 +104,49 @@ export async function formAtividade(atividade, aoSalvar, padrao = {}) {
     }
   });
 
+  // Dependências: filtro, resumo e ajuste automático do início para depois da predecessora.
+  const caixas = [...form.querySelectorAll('input[name=pred]')];
+  const resumo = form.querySelector('.deps-resumo');
+  const pintarResumo = (aviso = '') => {
+    if (!resumo) return;
+    const marcadas = caixas.filter((c) => c.checked);
+    const limite = marcadas.map((c) => c.dataset.fim).sort().pop();
+    resumo.textContent = marcadas.length
+      ? `${marcadas.length} selecionada${marcadas.length > 1 ? 's' : ''} · pode começar a partir de ${fmtDataLonga(limite)}.${aviso}`
+      : 'Nenhuma dependência.';
+  };
+  caixas.forEach((c) => c.addEventListener('change', () => {
+    let aviso = '';
+    const ini = form.inicio_planejado.value;
+    if (c.checked && ini && ini < c.dataset.fim) {
+      const dur = form.fim_planejado.value ? difDias(parseISO(ini), parseISO(form.fim_planejado.value)) : 0;
+      form.inicio_planejado.value = c.dataset.fim;
+      form.fim_planejado.value = toISO(addDias(parseISO(c.dataset.fim), Math.max(dur, 0)));
+      aviso = ' Datas ajustadas para depois da predecessora.';
+    }
+    pintarResumo(aviso);
+  }));
+  form.querySelector('.deps-busca')?.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    form.querySelectorAll('.deps-lista li').forEach((li) => { li.hidden = !!q && !li.dataset.busca.includes(q); });
+  });
+  pintarResumo();
+
   form.onsubmit = async (ev) => {
     ev.preventDefault();
-    const dados = {};
+    const dados = { predecessoras: caixas.filter((c) => c.checked).map((c) => Number(c.value)) };
     for (const [k, val] of new FormData(form)) {
+      if (k === 'pred') continue;
       const t = String(val).trim();
       if (['qtd_planejada', 'progresso_manual'].includes(k)) dados[k] = t === '' ? (k === 'qtd_planejada' ? 0 : null) : Number(t);
       else dados[k] = t === '' ? null : t;
     }
     try {
-      if (atividade) await api.atualizar(atividade.id, dados);
-      else await api.criar(dados);
+      const resp = atividade ? await api.atualizar(atividade.id, dados) : await api.criar(dados);
       limparSugestoes();
       m.close();
       toast(atividade ? 'Atividade atualizada.' : 'Atividade criada.');
+      avisarEmpurradas(resp);
       aoSalvar?.();
     } catch (e) {
       erro.textContent = e.message;
@@ -110,7 +176,7 @@ export async function modalApontamento(atividade, aoSalvar) {
         <button type="button" class="btn icone" data-fechar aria-label="Fechar">×</button></header>
       <div class="resumo-ativ">
         <div><strong>${esc(atividade.codigo || '')} ${esc(atividade.descricao)}</strong>
-          <span class="mudo">${esc(atividade.frente || '')} · ${fmtDataLonga(atividade.inicio_planejado)} a ${fmtDataLonga(atividade.fim_planejado)}</span></div>
+          <span class="mudo">${esc(atividade.frente || '')} · ${fmtDataLonga(atividade.inicio_planejado)} a ${fmtDataLonga(atividade.fim_planejado)}${atividade.responsavel ? ` · Responsável: ${esc(atividade.responsavel)}` : ''}</span></div>
         ${badge(s.status)}
       </div>
       <dl class="numeros">

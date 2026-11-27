@@ -1,9 +1,17 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+# Dependência "término → início": a atividade só pode começar quando a predecessora terminar.
+dependencias = Table(
+    "dependencias",
+    Base.metadata,
+    Column("atividade_id", Integer, ForeignKey("atividades.id", ondelete="CASCADE"), primary_key=True),
+    Column("predecessora_id", Integer, ForeignKey("atividades.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class Atividade(Base):
@@ -32,6 +40,21 @@ class Atividade(Base):
 
     apontamentos: Mapped[list["Apontamento"]] = relationship(
         back_populates="atividade", cascade="all, delete-orphan", order_by="Apontamento.data"
+    )
+    # Atividades das quais esta depende, e as que dependem desta.
+    predecessoras: Mapped[list["Atividade"]] = relationship(
+        secondary=dependencias,
+        primaryjoin=lambda: Atividade.id == dependencias.c.atividade_id,
+        secondaryjoin=lambda: Atividade.id == dependencias.c.predecessora_id,
+        back_populates="sucessoras",
+        order_by=lambda: Atividade.inicio_planejado,
+    )
+    sucessoras: Mapped[list["Atividade"]] = relationship(
+        secondary=dependencias,
+        primaryjoin=lambda: Atividade.id == dependencias.c.predecessora_id,
+        secondaryjoin=lambda: Atividade.id == dependencias.c.atividade_id,
+        back_populates="predecessoras",
+        order_by=lambda: Atividade.inicio_planejado,
     )
 
     @property

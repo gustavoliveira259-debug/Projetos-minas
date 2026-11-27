@@ -9,7 +9,10 @@ from ..models import Apontamento, Atividade
 from ..schemas import (
     ApontamentoCreate, ApontamentoOut, AtividadeCreate, AtividadeOut, AtividadeUpdate, validar_datas,
 )
-from ..services import CAMPOS, atividade_dict, listar_atividades
+from ..services import (
+    CAMPOS, atividade_dict, atividade_ref, empurrar_dependentes, listar_atividades, validar_inicio,
+    validar_predecessoras,
+)
 from ..status import indicadores
 
 router = APIRouter(prefix="/api", tags=["atividades"])
@@ -53,9 +56,25 @@ def filtros(db: Session = Depends(get_db)):
     }
 
 
+def _carregar_predecessoras(db: Session, ids: list[int]) -> list[Atividade]:
+    ids = list(dict.fromkeys(ids))
+    encontradas = list(db.scalars(select(Atividade).where(Atividade.id.in_(ids)))) if ids else []
+    faltando = set(ids) - {p.id for p in encontradas}
+    if faltando:
+        raise HTTPException(422, f"Atividade predecessora não encontrada: {', '.join(map(str, sorted(faltando)))}.")
+    return encontradas
+
+
 @router.post("/atividades", response_model=AtividadeOut, status_code=201)
 def criar(dados: AtividadeCreate, db: Session = Depends(get_db)):
-    a = Atividade(**dados.model_dump())
+    campos = dados.model_dump(exclude={"predecessoras"})
+    preds = _carregar_predecessoras(db, dados.predecessoras)
+    try:
+        validar_inicio(campos["inicio_planejado"], preds)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    a = Atividade(**campos)
+    a.predecessoras = preds
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -73,16 +92,24 @@ def atualizar(atividade_id: int, dados: AtividadeUpdate, db: Session = Depends(g
     mudancas = dados.model_dump(exclude_unset=True)
     if "descricao" in mudancas and not mudancas["descricao"]:
         raise HTTPException(422, "A descrição é obrigatória.")
+    ids_preds = mudancas.pop("predecessoras", None)
     final = {c: getattr(a, c) for c in CAMPOS} | mudancas
+    preds = a.predecessoras if ids_preds is None else _carregar_predecessoras(db, ids_preds)
     try:
         validar_datas(final)
+        validar_predecessoras(a, preds)
+        if ids_preds is not None or "inicio_planejado" in mudancas:
+            validar_inicio(final["inicio_planejado"], preds)
     except ValueError as e:
         raise HTTPException(422, str(e))
     for k, v in mudancas.items():
         setattr(a, k, v)
+    if ids_preds is not None:
+        a.predecessoras = preds
+    empurradas = empurrar_dependentes(a)
     db.commit()
     db.refresh(a)
-    return atividade_dict(a)
+    return atividade_dict(a) | {"empurradas": [atividade_ref(x) for x in empurradas]}
 
 
 @router.delete("/atividades/{atividade_id}", status_code=204)

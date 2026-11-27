@@ -8,7 +8,7 @@ let ordem = { campo: 'inicio_planejado', dir: 1 };
 
 const COLUNAS = [
   ['codigo', 'Código'], ['descricao', 'Atividade'], ['frente', 'Frente'], ['tipo', 'Tipo'],
-  ['equipamento', 'Equip.'], ['inicio_planejado', 'Início'], ['fim_planejado', 'Fim'],
+  ['equipamento', 'Equip.'], ['responsavel', 'Responsável'], ['inicio_planejado', 'Início'], ['fim_planejado', 'Fim'],
   ['qtd_planejada', 'Planejado', 'num'], ['qtd_realizada', 'Realizado', 'num'],
   ['progresso', 'Progresso', 'num'], ['desvio', 'Desvio', 'num'], ['status', 'Situação'],
 ];
@@ -28,7 +28,7 @@ export async function renderAtividades(main) {
       <button class="btn primario" id="nova">+ Nova atividade</button>
     </div>
     <div class="filtros">
-      <label class="busca">Buscar<input type="search" id="f-busca" placeholder="Descrição, código, equipamento…" value="${esc(filtro.busca)}"></label>
+      <label class="busca">Buscar<input type="search" id="f-busca" placeholder="Descrição, código, equipamento, responsável…" value="${esc(filtro.busca)}"></label>
       <label>Frente<select id="f-frente"><option value="">Todas</option>${opcoes.frentes.map((f) => `<option ${f === filtro.frente ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></label>
       <label>Tipo<select id="f-tipo"><option value="">Todos</option>${opcoes.tipos.map((t) => `<option ${t === filtro.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <label>Situação<select id="f-status"><option value="">Todas</option>${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === filtro.status ? 'selected' : ''}>${s.rotulo}</option>`).join('')}</select></label>
@@ -55,8 +55,10 @@ export async function renderAtividades(main) {
       const s = a.situacao;
       return `<tr data-id="${a.id}">
         <td class="cod">${esc(a.codigo || '')}</td>
-        <td>${esc(a.descricao)}${a.observacoes ? `<small class="mudo bloco">${esc(a.observacoes)}</small>` : ''}</td>
+        <td>${esc(a.descricao)}${a.observacoes ? `<small class="mudo bloco">${esc(a.observacoes)}</small>` : ''}
+          ${a.predecessoras.length ? `<small class="mudo bloco dep">↳ depende de ${a.predecessoras.map((p) => esc(p.codigo || p.descricao)).join(', ')}</small>` : ''}</td>
         <td>${esc(a.frente || '')}</td><td>${esc(a.tipo || '')}</td><td>${esc(a.equipamento || '')}</td>
+        <td>${a.responsavel ? `<span class="pessoa">${esc(a.responsavel)}</span>` : '<span class="mudo">—</span>'}</td>
         <td>${fmtData(a.inicio_planejado)}</td><td>${fmtData(a.fim_planejado)}</td>
         <td class="num">${a.qtd_planejada ? `${fmtNum(a.qtd_planejada)} ${esc(a.unidade)}` : '—'}</td>
         <td class="num">${a.qtd_planejada ? `${fmtNum(s.qtd_realizada)} ${esc(a.unidade)}` : '—'}</td>

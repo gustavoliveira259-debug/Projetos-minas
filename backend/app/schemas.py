@@ -21,6 +21,15 @@ class AtividadeBase(BaseModel):
     observacoes: str | None = None
 
 
+class AtividadeCreate(AtividadeBase):
+    predecessoras: list[int] = Field(default_factory=list, description="IDs das atividades das quais esta depende")
+
+    @model_validator(mode="after")
+    def _datas(self):
+        validar_datas(self.model_dump())
+        return self
+
+
 def validar_datas(d: dict):
     ini, fim = d.get("inicio_planejado"), d.get("fim_planejado")
     if ini and fim and fim < ini:
@@ -28,13 +37,6 @@ def validar_datas(d: dict):
     ir, fr = d.get("inicio_real"), d.get("fim_real")
     if ir and fr and fr < ir:
         raise ValueError("O fim real não pode ser anterior ao início real.")
-
-
-class AtividadeCreate(AtividadeBase):
-    @model_validator(mode="after")
-    def _datas(self):
-        validar_datas(self.model_dump())
-        return self
 
 
 class AtividadeUpdate(BaseModel):
@@ -54,6 +56,7 @@ class AtividadeUpdate(BaseModel):
     fim_real: date | None = None
     progresso_manual: float | None = Field(None, ge=0, le=100)
     observacoes: str | None = None
+    predecessoras: list[int] | None = None
 
 
 class SituacaoOut(BaseModel):
@@ -72,6 +75,16 @@ class SituacaoOut(BaseModel):
     concluida_com_atraso: bool
 
 
+class AtividadeRef(BaseModel):
+    """Referência curta a outra atividade (dependências)."""
+
+    id: int
+    codigo: str | None
+    descricao: str
+    inicio_planejado: date
+    fim_planejado: date
+
+
 class AtividadeOut(AtividadeBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -80,6 +93,10 @@ class AtividadeOut(AtividadeBase):
     criado_em: datetime | None = None
     atualizado_em: datetime | None = None
     situacao: SituacaoOut
+    predecessoras: list[AtividadeRef] = []
+    sucessoras: list[AtividadeRef] = []
+    # Preenchido só na resposta de uma alteração: dependentes empurradas por ela.
+    empurradas: list[AtividadeRef] = []
 
 
 class ApontamentoCreate(BaseModel):
